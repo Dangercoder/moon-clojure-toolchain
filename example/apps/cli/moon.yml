@@ -1,0 +1,26 @@
+language: 'clojure'
+layer: 'application'
+
+# No `dependsOn` needed — the clojure toolchain infers the dependency on
+# `greeter` from the `:local/root` coordinate in deps.edn.
+
+tasks:
+  build:
+    command: 'clojure'
+    args:
+      - '-M'
+      - '-e'
+      - '(do (.mkdirs (java.io.File. "target/classes")) (binding [*compile-path* "target/classes"] (compile (quote cli.main))) (shutdown-agents))'
+    deps:
+      - '^:build'
+    inputs:
+      - 'deps.edn'
+      - 'src/**/*'
+    outputs:
+      - 'target/classes'
+
+  run:
+    command: 'clojure'
+    args: ['-M', '-m', 'cli.main', 'moon']
+    options:
+      cache: false

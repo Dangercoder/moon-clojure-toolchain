@@ -1,0 +1,23 @@
+language: 'clojure'
+layer: 'library'
+
+tasks:
+  build:
+    command: 'clojure'
+    args:
+      - '-M'
+      - '-e'
+      - '(do (.mkdirs (java.io.File. "target/classes")) (binding [*compile-path* "target/classes"] (compile (quote greeter.core))) (shutdown-agents))'
+    inputs:
+      - 'deps.edn'
+      - 'src/**/*'
+    outputs:
+      - 'target/classes'
+
+  test:
+    command: 'clojure'
+    args: ['-M:test']
+    inputs:
+      - 'deps.edn'
+      - 'src/**/*'
+      - 'test/**/*'

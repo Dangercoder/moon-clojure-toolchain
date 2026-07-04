@@ -1,0 +1,7 @@
+{:paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.0"}
+        example/greeter {:local/root "../../libs/greeter"}
+        example/external {:local/root "../../../outside-workspace"}}
+ :aliases
+ {:test {:extra-paths ["test"]
+         :extra-deps {example/testkit {:local/root "../../libs/testkit"}}}}}

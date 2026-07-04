@@ -1,0 +1,4 @@
+# The Clojure toolchain, loaded from this repo's release build.
+# Build it first: cargo build --target wasm32-wasip1 --release
+clojure:
+  plugin: 'file://../../target/wasm32-wasip1/release/clojure_toolchain.wasm'

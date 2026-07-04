@@ -1,0 +1,42 @@
+[package]
+name = "clojure_toolchain"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A Clojure (tools.deps) toolchain plugin for the moon build system"
+repository = "https://github.com/Dangercoder/moon-clojure-toolchain"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+clojure-reader = "0.6"
+extism-pdk = "1.4.1"
+moon_common = "2.0.6"
+moon_config = "2.0.13"
+moon_pdk = { version = "2.0.4", features = ["schematic"] }
+moon_pdk_api = "2.0.4"
+schematic = { version = "0.19.7", default-features = false, features = [
+    "config",
+    "schema",
+] }
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+moon_pdk_test_utils = "2.0.4"
+serde_json = "1.0"
+starbase_sandbox = "0.11.0"
+tokio = { version = "1", features = ["full"] }
+
+[features]
+default = ["wasm"]
+wasm = []
+
+[profile.release]
+codegen-units = 1
+debug = false
+lto = true
+opt-level = 2
+panic = "abort"

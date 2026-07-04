@@ -1,0 +1,9 @@
+target/
+*.wasm
+!dist/*.wasm
+.cpcache/
+**/.moon/cache/
+**/.moon/docker/
+**/.clj-kondo/.cache/
+**/.lsp/.cache/
+.DS_Store
