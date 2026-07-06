@@ -43,7 +43,7 @@ Enable it in `.moon/toolchains.yml`:
 clojure:
   plugin: 'file:///path/to/clojure_toolchain.wasm'
   # or once published to a GitHub release:
-  # plugin: 'github://your-org/moon-clojure-toolchain'
+  # plugin: 'github://Dangercoder/moonrepo-clojure'
 ```
 
 That's it. Projects with a `deps.edn`/`bb.edn` manifest are picked up automatically.
