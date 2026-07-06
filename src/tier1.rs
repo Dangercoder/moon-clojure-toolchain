@@ -42,8 +42,8 @@ pub fn initialize_toolchain(
     Json(_): Json<InitializeToolchainInput>,
 ) -> FnResult<Json<InitializeToolchainOutput>> {
     Ok(Json(InitializeToolchainOutput {
-        config_url: Some("https://github.com/Dangercoder/moonrepo-clojure#configuration".into()),
-        docs_url: Some("https://github.com/Dangercoder/moonrepo-clojure".into()),
+        config_url: Some("https://github.com/Dangercoder/moon-clojure-toolchain#configuration".into()),
+        docs_url: Some("https://github.com/Dangercoder/moon-clojure-toolchain".into()),
         prompts: vec![SettingPrompt::new(
             "includeAliasDeps",
             "Scan alias maps (<file>:extra-deps</file>, etc) for local dependencies?",

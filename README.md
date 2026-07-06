@@ -30,23 +30,30 @@ builds for Clojure monorepos:
 
 ## Installation
 
-Build the plugin (or grab `clojure_toolchain.wasm` from a release):
+Enable the toolchain in `.moon/toolchains.yml` — the plugin is downloaded
+from this repo's GitHub releases:
+
+```yaml
+clojure:
+  plugin: 'github://Dangercoder/moon-clojure-toolchain'         # latest release
+  # plugin: 'github://Dangercoder/moon-clojure-toolchain@v0.1.0' # or pin a version
+```
+
+That's it. Projects with a `deps.edn`/`bb.edn` manifest are picked up automatically.
+(In CI, set `GITHUB_TOKEN` to avoid GitHub API rate limits when the plugin is
+first downloaded.)
+
+Alternatively, build from source and point at the file:
 
 ```shell
 rustup target add wasm32-wasip1
 cargo build --target wasm32-wasip1 --release
 ```
 
-Enable it in `.moon/toolchains.yml`:
-
 ```yaml
 clojure:
-  plugin: 'file:///path/to/clojure_toolchain.wasm'
-  # or once published to a GitHub release:
-  # plugin: 'github://Dangercoder/moonrepo-clojure'
+  plugin: 'file:///path/to/target/wasm32-wasip1/release/clojure_toolchain.wasm'
 ```
-
-That's it. Projects with a `deps.edn`/`bb.edn` manifest are picked up automatically.
 
 ## Configuration
 
@@ -55,7 +62,7 @@ All settings live under the `clojure` block in `.moon/toolchains.yml`
 
 ```yaml
 clojure:
-  plugin: 'file://../path/to/clojure_toolchain.wasm'
+  plugin: 'github://Dangercoder/moon-clojure-toolchain'
 
   # Turn :local/root coordinates into implicit moon project dependencies.
   inferRelationships: true
