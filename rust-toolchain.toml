@@ -1,0 +1,4 @@
+# Pinned so moonrepo/build-wasm-plugin selects the wasm32-wasip1 target
+# (without this it falls back to the removed `wasm32-wasi` name and fails).
+[toolchain]
+channel = "1.96.1"
