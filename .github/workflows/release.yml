@@ -26,6 +26,9 @@ jobs:
         uses: moonrepo/build-wasm-plugin@v0
         with:
           publish: true
+          # OCI repository names must be lowercase; the default namespace
+          # uses the repo owner verbatim ("Dangercoder") and fails.
+          namespace: dangercoder
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: ncipollo/release-action@v1
