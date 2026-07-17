@@ -1,6 +1,7 @@
 pub mod closure;
 pub mod config;
 pub mod deps_edn;
+pub mod sync;
 
 #[cfg(feature = "wasm")]
 mod tier1;

@@ -1,6 +1,7 @@
-use crate::closure::{collect_manifest_closure, normalize_rel_source, MANIFEST_NAMES};
+use crate::closure::{collect_closure, collect_dep_source_dirs, normalize_rel_source, MANIFEST_NAMES};
 use crate::config::ClojureToolchainConfig;
 use crate::deps_edn::{DepCoord, DepsEdn};
+use crate::sync::{has_unmanaged_file_groups, render_local_deps_block, splice_managed_block, BLOCK_START};
 use extism_pdk::*;
 use moon_config::DependencyScope;
 use moon_pdk::{locate_root, parse_toolchain_config_schema};
@@ -202,9 +203,75 @@ pub fn parse_manifest(
     Ok(Json(output))
 }
 
-/// Fold the transitive `:local/root` manifest closure into every task hash,
-/// so dependency changes anywhere in the closure (including manifests
-/// outside the moon workspace) invalidate task caches.
+/// Generate and maintain the `fileGroups.localDeps` block in the project's
+/// `moon.yml` from its transitive `:local/root` closure — the dependency
+/// input list moon's affected detection schedules from, produced instead of
+/// hand-maintained (rules_clojure `gen_srcs` style; see `sync.rs`).
+#[plugin_fn]
+pub fn sync_project(Json(input): Json<SyncProjectInput>) -> FnResult<Json<SyncOutput>> {
+    let config = parse_toolchain_config_schema::<ClojureToolchainConfig>(input.toolchain_config)?;
+    let mut output = SyncOutput::default();
+
+    if !config.sync_dependency_inputs {
+        output.skipped = true;
+        return Ok(Json(output));
+    }
+
+    let dirs = collect_dep_source_dirs(
+        &input.context.workspace_root,
+        &input.project.source,
+        config.include_alias_deps,
+    )?;
+
+    let manifest_path = input
+        .context
+        .workspace_root
+        .join(&input.project.source)
+        .join("moon.yml");
+
+    let existing = if manifest_path.exists() {
+        fs::read_to_string(manifest_path.any_path())?
+    } else {
+        String::new()
+    };
+
+    let has_markers = existing.contains(BLOCK_START);
+
+    // Nothing to declare and nothing previously declared — leave the
+    // project untouched (no surprise moon.yml churn for leaf projects).
+    if dirs.is_empty() && !has_markers {
+        output.skipped = true;
+        return Ok(Json(output));
+    }
+
+    // A hand-written fileGroups key outside the managed block would collide
+    // (duplicate YAML key). Leave the file alone; the user opts in by adding
+    // the marker block inside their own fileGroups arrangement.
+    if !has_markers && has_unmanaged_file_groups(&existing) {
+        output.skipped = true;
+        return Ok(Json(output));
+    }
+
+    let block = render_local_deps_block(&dirs);
+
+    if let Some(updated) = splice_managed_block(&existing, &block) {
+        fs::write(manifest_path.any_path(), updated)?;
+        output
+            .changed_files
+            .push(manifest_path.any_path().to_path_buf());
+    } else {
+        output.skipped = true;
+    }
+
+    Ok(Json(output))
+}
+
+/// Fold the transitive `:local/root` closure into every task hash: the
+/// manifests AND (by default) every dependency source file under each dep's
+/// top-level `:paths`. Dependency changes anywhere in the closure invalidate
+/// task caches even when the consumer's task `inputs` don't list the
+/// dependency's sources — per-file entries also make `moon query hash-diff`
+/// name the exact file behind a cache miss.
 #[plugin_fn]
 pub fn hash_task_contents(
     Json(input): Json<HashTaskContentsInput>,
@@ -212,19 +279,39 @@ pub fn hash_task_contents(
     let config = parse_toolchain_config_schema::<ClojureToolchainConfig>(input.toolchain_config)?;
     let project_root = input.context.get_project_root(&input.project);
 
-    let manifests = collect_manifest_closure(&project_root, config.include_alias_deps)?;
+    let closure = collect_closure(
+        &project_root,
+        config.include_alias_deps,
+        config.hash_local_sources,
+    )?;
 
     let mut content = json::Map::new();
     content.insert("toolchain".into(), json::Value::String("clojure".into()));
     content.insert(
         "manifests".into(),
         json::Value::Object(
-            manifests
+            closure
+                .manifests
                 .into_iter()
                 .map(|(path, hash)| (path, json::Value::String(hash)))
                 .collect(),
         ),
     );
+
+    // Omitted when empty so leaf projects (no local deps) keep their
+    // pre-0.2.0 hashes — upgrading doesn't cold-start their caches.
+    if !closure.sources.is_empty() {
+        content.insert(
+            "localSources".into(),
+            json::Value::Object(
+                closure
+                    .sources
+                    .into_iter()
+                    .map(|(path, hash)| (path, json::Value::String(hash)))
+                    .collect(),
+            ),
+        );
+    }
 
     if !config.prepare_aliases.is_empty() {
         content.insert(
