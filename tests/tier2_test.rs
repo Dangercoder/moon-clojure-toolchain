@@ -256,6 +256,53 @@ mod clojure_toolchain_tier2 {
         }
 
         #[tokio::test(flavor = "multi_thread")]
+        async fn hashes_dependency_sources_by_default() {
+            let sandbox = create_moon_sandbox("projects");
+            let plugin = sandbox.create_toolchain("clojure").await;
+
+            let output = plugin
+                .hash_task_contents(HashTaskContentsInput {
+                    project: ProjectFragment {
+                        id: Id::raw("cli"),
+                        source: "apps/cli".into(),
+                        ..Default::default()
+                    },
+                    toolchain_config: json!({}),
+                    ..Default::default()
+                })
+                .await;
+
+            let sources = output.contents[0]["localSources"].as_object().unwrap();
+
+            assert!(sources.contains_key("/workspace/libs/greeter/src/greeter/core.clj"));
+            assert!(sources.contains_key("/workspace/libs/greeter/resources/greeting.txt"));
+            // No :paths declared -> tools.deps default ["src"].
+            assert!(sources.contains_key("/workspace/libs/testkit/src/testkit/helpers.clj"));
+            // The origin project's own sources belong to its task inputs.
+            assert!(!sources.keys().any(|k| k.contains("apps/cli")));
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn omits_sources_when_disabled() {
+            let sandbox = create_moon_sandbox("projects");
+            let plugin = sandbox.create_toolchain("clojure").await;
+
+            let output = plugin
+                .hash_task_contents(HashTaskContentsInput {
+                    project: ProjectFragment {
+                        id: Id::raw("cli"),
+                        source: "apps/cli".into(),
+                        ..Default::default()
+                    },
+                    toolchain_config: json!({ "hashLocalSources": false }),
+                    ..Default::default()
+                })
+                .await;
+
+            assert!(output.contents[0].get("localSources").is_none());
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
         async fn marks_external_deps_unavailable() {
             let sandbox = create_moon_sandbox("projects");
             let plugin = sandbox.create_toolchain("clojure").await;

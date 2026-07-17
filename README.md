@@ -72,6 +72,13 @@ clojure:
   # `development` scope; top-level :deps get `production`.
   includeAliasDeps: true
 
+  # Fold every source file of the transitive :local/root dependency closure
+  # into task hashes (each dependency's top-level :paths, tools.deps default
+  # ["src"]) — not just the manifests. A dependency source edit then
+  # invalidates consumer task caches even when the consumer's task `inputs`
+  # don't list the dependency's sources.
+  hashLocalSources: true
+
   # Aliases activated when preparing dependencies:
   # ["test", "build"] => `clojure -P -A:test:build`
   prepareAliases: []
@@ -98,7 +105,18 @@ apps/cli/deps.edn      ; :deps {example/greeter {:local/root "../../libs/greeter
    any `deps.edn` in the closure — including ones outside the moon workspace —
    invalidates the cache. (Out-of-workspace manifests that cannot be read from
    the WASM sandbox are tracked by path with an `unavailable` marker.)
-3. Task `inputs`/`outputs` handle source-level caching as usual; `.cpcache`
+3. With `hashLocalSources` (default on), the same walk also folds
+   `{dependency source file: sha256}` into the hash — every file under each
+   dependency's top-level `:paths` (tools.deps default `["src"]`; resources
+   and `data_readers.clj` count, exactly like classpath contents). This is
+   the Bazel action-input model at project granularity: moon has no execution
+   sandbox, so a dependency source missing from a consumer's task `inputs`
+   would otherwise fail STALE — a silently replayed cached green — rather
+   than loud. Dot-prefixed entries plus `target/` and `node_modules/` are
+   skipped; only the ORIGIN project's own sources are left to its `inputs`
+   (which moon defaults to `**/*`). Per-file hash entries also mean
+   `moon query hash-diff` names the exact dependency file behind a cache miss.
+4. Task `inputs`/`outputs` handle source-level caching as usual; `.cpcache`
    is registered as the vendor dir and stays out of hashes and Docker scaffolds.
 
 Recommended task shape (e.g. in `.moon/tasks/clojure.yml` or per-project `moon.yml`):
@@ -146,7 +164,7 @@ Check `moon query affected --downstream deep` to see the edge in action, and
 | 2 | `install_dependencies` | `clojure -P [-A:...]` / `bb prepare` |
 | 2 | `extend_project_graph` | `:local/root` → implicit project dependencies |
 | 2 | `parse_manifest` | `:deps` + alias deps → moon's dependency model |
-| 2 | `hash_task_contents` | Transitive manifest closure content hashes |
+| 2 | `hash_task_contents` | Transitive manifest + dependency source content hashes |
 
 ## Roadmap
 

@@ -1,4 +1,4 @@
-use crate::closure::{collect_manifest_closure, normalize_rel_source, MANIFEST_NAMES};
+use crate::closure::{collect_closure, normalize_rel_source, MANIFEST_NAMES};
 use crate::config::ClojureToolchainConfig;
 use crate::deps_edn::{DepCoord, DepsEdn};
 use extism_pdk::*;
@@ -202,9 +202,12 @@ pub fn parse_manifest(
     Ok(Json(output))
 }
 
-/// Fold the transitive `:local/root` manifest closure into every task hash,
-/// so dependency changes anywhere in the closure (including manifests
-/// outside the moon workspace) invalidate task caches.
+/// Fold the transitive `:local/root` closure into every task hash: the
+/// manifests AND (by default) every dependency source file under each dep's
+/// top-level `:paths`. Dependency changes anywhere in the closure invalidate
+/// task caches even when the consumer's task `inputs` don't list the
+/// dependency's sources — per-file entries also make `moon query hash-diff`
+/// name the exact file behind a cache miss.
 #[plugin_fn]
 pub fn hash_task_contents(
     Json(input): Json<HashTaskContentsInput>,
@@ -212,19 +215,39 @@ pub fn hash_task_contents(
     let config = parse_toolchain_config_schema::<ClojureToolchainConfig>(input.toolchain_config)?;
     let project_root = input.context.get_project_root(&input.project);
 
-    let manifests = collect_manifest_closure(&project_root, config.include_alias_deps)?;
+    let closure = collect_closure(
+        &project_root,
+        config.include_alias_deps,
+        config.hash_local_sources,
+    )?;
 
     let mut content = json::Map::new();
     content.insert("toolchain".into(), json::Value::String("clojure".into()));
     content.insert(
         "manifests".into(),
         json::Value::Object(
-            manifests
+            closure
+                .manifests
                 .into_iter()
                 .map(|(path, hash)| (path, json::Value::String(hash)))
                 .collect(),
         ),
     );
+
+    // Omitted when empty so leaf projects (no local deps) keep their
+    // pre-0.2.0 hashes — upgrading doesn't cold-start their caches.
+    if !closure.sources.is_empty() {
+        content.insert(
+            "localSources".into(),
+            json::Value::Object(
+                closure
+                    .sources
+                    .into_iter()
+                    .map(|(path, hash)| (path, json::Value::String(hash)))
+                    .collect(),
+            ),
+        );
+    }
 
     if !config.prepare_aliases.is_empty() {
         content.insert(
