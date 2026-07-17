@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.0
+
+- **Generated dependency inputs (gazelle-style) — hand-maintained
+  cross-project input globs are gone.** During project sync (part of every
+  moon run, or `moon sync projects`), the toolchain now generates and owns a
+  marker-delimited `fileGroups.localDeps` block in each Clojure project's
+  `moon.yml`, listing the source-dir globs of its transitive `:local/root`
+  closure (each dep's top-level `:paths`, tools.deps default `["src"]`).
+  Tasks reference it once as `'@group(localDeps)'`; adding a `:local/root`
+  dep to deps.edn regenerates the block on the next run. Mirrors
+  rules_clojure's `gen_srcs`: build config is derived from the manifests,
+  never hand-written, and rewritten only when its content changes.
+- The block is a pure function of manifest contents (no filesystem existence
+  checks), so regeneration is deterministic; pair it with a
+  `git diff --exit-code -- '*moon.yml'` CI step to force regenerated blocks
+  to be committed.
+- Projects with no local deps are left untouched; files with a hand-written
+  `fileGroups:` outside the managed block are skipped (add the markers inside
+  your own arrangement to opt in).
+- New toolchain setting `syncDependencyInputs` (default `true`) to opt out.
+
 ## 0.2.0
 
 - **Task hashes now cover the sources of the transitive `:local/root` closure,

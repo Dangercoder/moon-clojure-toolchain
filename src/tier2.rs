@@ -1,6 +1,7 @@
-use crate::closure::{collect_closure, normalize_rel_source, MANIFEST_NAMES};
+use crate::closure::{collect_closure, collect_dep_source_dirs, normalize_rel_source, MANIFEST_NAMES};
 use crate::config::ClojureToolchainConfig;
 use crate::deps_edn::{DepCoord, DepsEdn};
+use crate::sync::{has_unmanaged_file_groups, render_local_deps_block, splice_managed_block, BLOCK_START};
 use extism_pdk::*;
 use moon_config::DependencyScope;
 use moon_pdk::{locate_root, parse_toolchain_config_schema};
@@ -197,6 +198,69 @@ pub fn parse_manifest(
                 .dev_dependencies
                 .insert(lib.to_owned(), to_manifest_dependency(coord));
         }
+    }
+
+    Ok(Json(output))
+}
+
+/// Generate and maintain the `fileGroups.localDeps` block in the project's
+/// `moon.yml` from its transitive `:local/root` closure — the dependency
+/// input list moon's affected detection schedules from, produced instead of
+/// hand-maintained (rules_clojure `gen_srcs` style; see `sync.rs`).
+#[plugin_fn]
+pub fn sync_project(Json(input): Json<SyncProjectInput>) -> FnResult<Json<SyncOutput>> {
+    let config = parse_toolchain_config_schema::<ClojureToolchainConfig>(input.toolchain_config)?;
+    let mut output = SyncOutput::default();
+
+    if !config.sync_dependency_inputs {
+        output.skipped = true;
+        return Ok(Json(output));
+    }
+
+    let dirs = collect_dep_source_dirs(
+        &input.context.workspace_root,
+        &input.project.source,
+        config.include_alias_deps,
+    )?;
+
+    let manifest_path = input
+        .context
+        .workspace_root
+        .join(&input.project.source)
+        .join("moon.yml");
+
+    let existing = if manifest_path.exists() {
+        fs::read_to_string(manifest_path.any_path())?
+    } else {
+        String::new()
+    };
+
+    let has_markers = existing.contains(BLOCK_START);
+
+    // Nothing to declare and nothing previously declared — leave the
+    // project untouched (no surprise moon.yml churn for leaf projects).
+    if dirs.is_empty() && !has_markers {
+        output.skipped = true;
+        return Ok(Json(output));
+    }
+
+    // A hand-written fileGroups key outside the managed block would collide
+    // (duplicate YAML key). Leave the file alone; the user opts in by adding
+    // the marker block inside their own fileGroups arrangement.
+    if !has_markers && has_unmanaged_file_groups(&existing) {
+        output.skipped = true;
+        return Ok(Json(output));
+    }
+
+    let block = render_local_deps_block(&dirs);
+
+    if let Some(updated) = splice_managed_block(&existing, &block) {
+        fs::write(manifest_path.any_path(), updated)?;
+        output
+            .changed_files
+            .push(manifest_path.any_path().to_path_buf());
+    } else {
+        output.skipped = true;
     }
 
     Ok(Json(output))

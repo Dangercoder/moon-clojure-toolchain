@@ -203,6 +203,83 @@ pub fn collect_closure(
     Ok(out)
 }
 
+/// Workspace-relative source dirs (each dependency's top-level `:paths`,
+/// tools.deps default `["src"]`) for every DEPENDENCY project in the
+/// transitive `:local/root` closure — the generator behind the managed
+/// `localDeps` file group (see `sync.rs`). A pure function of manifest
+/// CONTENTS — no filesystem existence checks — so regeneration is
+/// deterministic and idempotent, rules_clojure `gen_srcs` style. Roots and
+/// paths escaping the workspace resolve to `None` in `normalize_rel_source`
+/// and are skipped (they cannot be moon inputs).
+pub fn collect_dep_source_dirs(
+    workspace_root: &VirtualPath,
+    project_source: &str,
+    include_alias_deps: bool,
+) -> AnyResult<BTreeSet<String>> {
+    let mut out = BTreeSet::new();
+    let mut visited: BTreeSet<String> = BTreeSet::new();
+    let origin = normalize_rel_source(project_source, ".").unwrap_or_else(|| ".".into());
+    let mut queue: Vec<String> = vec![origin.clone()];
+
+    while let Some(source) = queue.pop() {
+        if !visited.insert(source.clone()) {
+            continue;
+        }
+
+        let root = workspace_root.join(&source);
+        let is_origin = source == origin;
+        let mut has_deps_edn = false;
+        let mut paths: Vec<String> = vec![];
+
+        for name in MANIFEST_NAMES {
+            let file = root.join(name);
+
+            if !file.exists() {
+                continue;
+            }
+
+            let Ok(content) = fs::read_to_string(file.any_path()) else {
+                continue;
+            };
+
+            let manifest = DepsEdn::parse(&content)
+                .map_err(|e| anyhow!("failed to parse {}: {e}", file.any_path().display()))?;
+
+            for (_, local_root, _) in manifest.local_deps(include_alias_deps) {
+                if let Some(dep_source) = normalize_rel_source(&source, local_root) {
+                    queue.push(dep_source);
+                }
+            }
+
+            if name == "deps.edn" {
+                has_deps_edn = true;
+            }
+
+            for path in &manifest.paths {
+                if !paths.contains(path) {
+                    paths.push(path.clone());
+                }
+            }
+        }
+
+        if is_origin {
+            continue;
+        }
+
+        if paths.is_empty() && has_deps_edn {
+            paths.push("src".to_string());
+        }
+
+        for path in paths {
+            if let Some(dir) = normalize_rel_source(&source, &path) {
+                out.insert(dir);
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 /// Recursively hash every file under `dir` into `out`. Dot-prefixed entries
 /// (editor droppings, `.cpcache`, `.nrepl-port`) and build-output dirs are
 /// skipped; unreadable files keep a marker so their existence still perturbs

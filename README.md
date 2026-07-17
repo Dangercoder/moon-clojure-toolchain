@@ -79,6 +79,13 @@ clojure:
   # don't list the dependency's sources.
   hashLocalSources: true
 
+  # During project sync, generate + maintain a marker-delimited
+  # `fileGroups.localDeps` block in each Clojure project's moon.yml from its
+  # transitive :local/root closure. Tasks reference it once as
+  # '@group(localDeps)' — dependency input lists are derived, never
+  # hand-maintained (rules_clojure gen_srcs style).
+  syncDependencyInputs: true
+
   # Aliases activated when preparing dependencies:
   # ["test", "build"] => `clojure -P -A:test:build`
   prepareAliases: []
@@ -116,7 +123,30 @@ apps/cli/deps.edn      ; :deps {example/greeter {:local/root "../../libs/greeter
    skipped; only the ORIGIN project's own sources are left to its `inputs`
    (which moon defaults to `**/*`). Per-file hash entries also mean
    `moon query hash-diff` names the exact dependency file behind a cache miss.
-4. Task `inputs`/`outputs` handle source-level caching as usual; `.cpcache`
+4. `sync_project` generates each project's dependency-input list instead of
+   leaving it to hand-maintained globs: a managed block in `moon.yml`
+   (`# <clojure-toolchain:local-deps>` … `# </clojure-toolchain:local-deps>`)
+   declares `fileGroups.localDeps` with the closure's source-dir globs, and
+   tasks opt in with a single stable input line:
+
+   ```yaml
+   tasks:
+     test:
+       command: 'clojure'
+       args: ['-M:test']
+       inputs:
+         - 'src/**/*'
+         - 'test/**/*'
+         - 'deps.edn'
+         - '@group(localDeps)'   # generated — schedules this task in `moon ci`
+   ```
+
+   Scheduling (affected detection) needs declared inputs; hashing does not
+   (see #3) — the generated group closes the scheduling half, the source
+   hashing closes the caching half. Add a CI drift check
+   (`git diff --exit-code -- '*moon.yml'`) so regenerated blocks always land
+   in the commit that changed deps.edn.
+5. Task `inputs`/`outputs` handle source-level caching as usual; `.cpcache`
    is registered as the vendor dir and stays out of hashes and Docker scaffolds.
 
 Recommended task shape (e.g. in `.moon/tasks/clojure.yml` or per-project `moon.yml`):
@@ -165,6 +195,7 @@ Check `moon query affected --downstream deep` to see the edge in action, and
 | 2 | `extend_project_graph` | `:local/root` → implicit project dependencies |
 | 2 | `parse_manifest` | `:deps` + alias deps → moon's dependency model |
 | 2 | `hash_task_contents` | Transitive manifest + dependency source content hashes |
+| 2 | `sync_project` | Generated `fileGroups.localDeps` block from the `:local/root` closure |
 
 ## Roadmap
 

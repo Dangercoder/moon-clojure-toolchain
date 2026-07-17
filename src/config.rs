@@ -28,6 +28,16 @@ config_struct!(
         /// results in `clojure -P -A:test:build`.
         pub prepare_aliases: Vec<String>,
 
+        /// During project sync, generate and maintain a marker-delimited
+        /// `fileGroups.localDeps` block in each Clojure project's `moon.yml`,
+        /// listing the source-dir globs of its transitive `:local/root`
+        /// closure. Tasks reference it once as `'@group(localDeps)'` and the
+        /// dependency list is never hand-maintained again (rules_clojure
+        /// `gen_srcs` style). The block is a pure function of the manifests
+        /// and only rewritten when its content changes.
+        #[setting(default = true)]
+        pub sync_dependency_inputs: bool,
+
         /// Reserved for future proto-based version management of the
         /// Clojure CLI. Currently the `clojure`/`bb` binaries are
         /// resolved from `PATH`.

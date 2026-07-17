@@ -223,6 +223,86 @@ mod clojure_toolchain_tier2 {
         }
     }
 
+    mod sync_project {
+        use super::*;
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn writes_and_refreshes_the_managed_block() {
+            let sandbox = create_moon_sandbox("projects");
+            let plugin = sandbox.create_toolchain("clojure").await;
+
+            let input = || SyncProjectInput {
+                project: ProjectFragment {
+                    id: Id::raw("cli"),
+                    source: "apps/cli".into(),
+                    ..Default::default()
+                },
+                toolchain_config: json!({}),
+                ..Default::default()
+            };
+
+            let output = plugin.sync_project(input()).await;
+
+            assert_eq!(output.changed_files.len(), 1);
+
+            let content =
+                std::fs::read_to_string(sandbox.path().join("apps/cli/moon.yml")).unwrap();
+
+            assert!(content.starts_with("language: 'clojure'\n"));
+            assert!(content.contains("# <clojure-toolchain:local-deps>"));
+            assert!(content.contains("- '/libs/greeter/src/**/*'"));
+            assert!(content.contains("- '/libs/greeter/resources/**/*'"));
+            assert!(content.contains("- '/libs/testkit/src/**/*'"));
+
+            // Second sync: content unchanged -> skipped, no writes.
+            let output = plugin.sync_project(input()).await;
+
+            assert!(output.skipped);
+            assert!(output.changed_files.is_empty());
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn leaves_leaf_projects_untouched() {
+            let sandbox = create_moon_sandbox("projects");
+            let plugin = sandbox.create_toolchain("clojure").await;
+
+            let output = plugin
+                .sync_project(SyncProjectInput {
+                    project: ProjectFragment {
+                        id: Id::raw("greeter"),
+                        source: "libs/greeter".into(),
+                        ..Default::default()
+                    },
+                    toolchain_config: json!({}),
+                    ..Default::default()
+                })
+                .await;
+
+            assert!(output.skipped);
+            assert!(!sandbox.path().join("libs/greeter/moon.yml").exists());
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn can_be_disabled() {
+            let sandbox = create_moon_sandbox("projects");
+            let plugin = sandbox.create_toolchain("clojure").await;
+
+            let output = plugin
+                .sync_project(SyncProjectInput {
+                    project: ProjectFragment {
+                        id: Id::raw("cli"),
+                        source: "apps/cli".into(),
+                        ..Default::default()
+                    },
+                    toolchain_config: json!({ "syncDependencyInputs": false }),
+                    ..Default::default()
+                })
+                .await;
+
+            assert!(output.skipped);
+        }
+    }
+
     mod hash_task_contents {
         use super::*;
 
